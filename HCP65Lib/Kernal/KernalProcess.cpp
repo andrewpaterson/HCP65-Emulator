@@ -2,6 +2,7 @@
 #include <string.h>
 #include "BaseLib/MemoryFile.h"
 #include "BaseLib/ChunkFile.h"
+#include "BaseLib/MapStringInt.h"
 #include "BaseLib/FatFile.h"
 #include "Assembler65Lib/Asm65Object.h"
 #include "KernalDevices.h"
@@ -148,6 +149,27 @@ uint16 KernalRunExecutable(const char* szPath, uint16* puiExitCode)
 	bLoaded = (cFile.Read(puiFile, uiSize, &uiRead) == FAT_SUCCESS) && (uiRead == uiSize);
 	gsKernalStatus.uiExitCode = (uint16)uiSize;
 	cFile.Close();
+
+	{
+		CFileBasic			cDbg;
+		SChunkFileHeader	sDbg;
+		CMapStringInt		mDbg;
+		uint16				uiFlags;
+
+		cDbg.Init(MemoryFile(puiFile, uiSize));
+		uiFlags = cDbg.Open(EFM_Read) ? 1 : 0;
+		uiFlags |= (cDbg.Read(&sDbg, sizeof(SChunkFileHeader), 1) == 1) ? 2 : 0;
+		uiFlags |= (sDbg.miMagic == CHUNK_HEADER_MAGIC) ? 4 : 0;
+		uiFlags |= cDbg.Seek(sDbg.miChunkNamesPos) ? 8 : 0;
+		mDbg.Init();
+		uiFlags |= mDbg.Read(&cDbg) ? 16 : 0;
+		uiFlags |= (uint16)(mDbg.NumElements() << 8);
+		gsKernalStatus.uiNumClusters = (uint32)sizeof(SChunkFileHeader) | ((uint32)sDbg.miChunkNamesPos << 16);
+		gsKernalStatus.uiFreeClusters = uiFlags;
+		mDbg.Kill();
+		cDbg.Close();
+		cDbg.Kill();
+	}
 
 	//Read without checking its hashes, so the kernal doesn't need MD5.
 	cObject.Init("");
