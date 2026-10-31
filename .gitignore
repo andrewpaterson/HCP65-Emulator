@@ -1,0 +1,15 @@
+/Debug/*
+/Release/*
+/.vs/*
+/x64/Debug/*
+/x64/Release/*
+/HCP65Emulator/Debug/*
+/HCP65Emulator/Release/*
+/HCP65Emulator/x64/Debug/*
+/HCP65Emulator/x64/Release/*
+/HCP65Emulator/Output/*
+/HCP65Emulator/Log.txt
+/HCP65Lib/Debug/*
+/HCP65Lib/Release/*
+/HCP65Lib/x64/Debug/*
+/HCP65Lib/x64/Release/*

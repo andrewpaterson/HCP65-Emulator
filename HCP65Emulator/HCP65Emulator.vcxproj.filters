@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="HCP65Emulator.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="HCP65EmulatorTick.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="FileMenuListener.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="HCP65EmulatorTick.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="FileMenuListener.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source">
+      <UniqueIdentifier>{8D2F4A61-3B7C-4E19-A5D0-6C1E2F3A4B5C}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
