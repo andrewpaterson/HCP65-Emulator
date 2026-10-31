@@ -10,6 +10,7 @@
 #define MODPLAY_BLOCK_FRAMES		256										//Frames rendered at a time.
 #define MODPLAY_BUFFER_FRAMES		0x8000									//The sound board's RAM A and RAM B.
 #define MODPLAY_MAX_QUEUED			(MODPLAY_BUFFER_FRAMES - MODPLAY_BLOCK_FRAMES)	//Written but not played yet.
+#define MODPLAY_START_FRAMES		(MODPLAY_BLOCK_FRAMES * 4)				//Rendered before the sound board starts.
 #define MODPLAY_HEAP_SIZE			0x180000									//The file, the song (its samples copied), the objects.
 
 #define MODPLAY_EXIT_SUCCESS		0
@@ -19,12 +20,6 @@
 #define MODPLAY_EXIT_NO_SOUND_BOARD	4
 #define MODPLAY_EXIT_BAD_LOAD		5		//The file read isn't a module ("M.K." isn't at 1080).
 
-
-//A mixed 16 bit sample as the sound board's DAC takes it: unsigned 8 bit, $80 the middle.
-inline uint8 ModPlaySample(int16 iSample)
-{
-	return (uint8)((iSample >> 8) + 128);
-}
 
 
 #endif // __MOD_PLAY_SAMPLES_H__

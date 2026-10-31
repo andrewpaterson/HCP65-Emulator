@@ -184,7 +184,7 @@ static void TestKernalAppend(CArrayUint8* pacDest, uint8* puiSource, uint32 uiLe
 static void TestKernalRenderSong(lsize uiFrames, CArrayUint8* pacFrames)
 {
 	CModPlayer		cPlayer;
-	int16			aiStereo[MODPLAY_BLOCK_FRAMES * 2];
+	SModUnsigned8	sBlock;
 	uint8			auiSamples[MODPLAY_BLOCK_FRAMES * 2];
 	lsize			uiDone;
 	lsize			uiBlock;
@@ -200,14 +200,15 @@ static void TestKernalRenderSong(lsize uiFrames, CArrayUint8* pacFrames)
 		for (uiDone = 0; uiDone < uiFrames; uiDone += uiBlock)
 		{
 			uiBlock = ((uiFrames - uiDone) < MODPLAY_BLOCK_FRAMES) ? (uiFrames - uiDone) : MODPLAY_BLOCK_FRAMES;
-			uiBlock = cPlayer.Render(aiStereo, uiBlock);
+			uiBlock = cPlayer.Render8(&sBlock, uiBlock);
 			if (uiBlock == 0)
 			{
 				break;
 			}
-			for (i = 0; i < uiBlock * 2; i++)
+			for (i = 0; i < uiBlock; i++)
 			{
-				auiSamples[i] = ModPlaySample(aiStereo[i]);
+				auiSamples[i * 2] = sBlock.auiLeft[i];
+				auiSamples[i * 2 + 1] = sBlock.auiRight[i];
 			}
 			TestKernalAppend(pacFrames, auiSamples, (uint32)(uiBlock * 2));
 		}
@@ -281,7 +282,8 @@ void TestHCP65KernalBoot(void)
 	puiROM = cBuilder.GetROM();
 	AssertTrue(cBuilder.GetSymbol("_guiKernalBootArgument", &uiArgument));
 	AssertInt(0xFFFF, (int32)(puiROM[uiArgument] | (puiROM[uiArgument + 1] << 8)));
-	//TEST_MODPLAY_SECONDS and TEST_HCP65_RUN_CYCLES (environment) override them, to time modplay.exe.
+	//TEST_MODPLAY_SECONDS, TEST_HCP65_RUN_CYCLES and TEST_HCP65_CLOCK (environment) override them, to time modplay.exe
+	//(at the board's 25000000 it must keep the sound board fed, or what it plays won't match).
 	uiSeconds = getenv("TEST_MODPLAY_SECONDS") ? (uint32)atoi(getenv("TEST_MODPLAY_SECONDS")) : TEST_MODPLAY_SECONDS;
 	uiRunCycles = getenv("TEST_HCP65_RUN_CYCLES") ? (uint64)atoll(getenv("TEST_HCP65_RUN_CYCLES")) : TEST_HCP65_RUN_CYCLES;
 	puiROM[uiArgument] = (uint8)uiSeconds;
@@ -291,7 +293,7 @@ void TestHCP65KernalBoot(void)
 	{
 		printf("status at $%06X, boot argument at $%06X\n", uiStatus, uiArgument);
 	}
-	cHCP65.Init(TEST_HCP65_CLOCK_RATE);
+	cHCP65.Init(getenv("TEST_HCP65_CLOCK") ? (uint64)atoll(getenv("TEST_HCP65_CLOCK")) : TEST_HCP65_CLOCK_RATE);
 	cAudio.Init();
 	cSDCard.Init();
 	AssertTrue(cSDCard.InsertCard(TEST_HCP65_SD_CARD_IMAGE, false));

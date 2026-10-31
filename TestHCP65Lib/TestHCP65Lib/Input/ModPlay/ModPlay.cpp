@@ -20,9 +20,7 @@
 #define AUDIO_FLAG_ENABLE		0x40
 
 
-int16		gaiModPlayStereo[MODPLAY_BLOCK_FRAMES * 2];
-uint8		gauiModPlayLeft[MODPLAY_BLOCK_FRAMES];
-uint8		gauiModPlayRight[MODPLAY_BLOCK_FRAMES];
+SModUnsigned8	gsModPlayBlock;		//A block as the sound board plays it (MODPLAY_BLOCK_FRAMES is MOD_MIX_BLOCK).
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -35,18 +33,12 @@ uint8		gauiModPlayRight[MODPLAY_BLOCK_FRAMES];
 uint16 ModPlayBlock(CModPlayer* pcPlayer, uint16 uiWrite, lsize uiFramesLeft)
 {
 	lsize	uiFrames;
-	uint16	i;
 
 	uiFrames = (uiFramesLeft < MODPLAY_BLOCK_FRAMES) ? uiFramesLeft : MODPLAY_BLOCK_FRAMES;
-	uiFrames = pcPlayer->Render(gaiModPlayStereo, uiFrames);
-	for (i = 0; i < (uint16)uiFrames; i++)
-	{
-		gauiModPlayLeft[i] = ModPlaySample(gaiModPlayStereo[i * 2]);
-		gauiModPlayRight[i] = ModPlaySample(gaiModPlayStereo[i * 2 + 1]);
-	}
+	uiFrames = pcPlayer->Render8(&gsModPlayBlock, uiFrames);
 	if (uiFrames > 0)
 	{
-		KernalAudioWrite(uiWrite, gauiModPlayLeft, gauiModPlayRight, (uint16)uiFrames);
+		KernalAudioWrite(uiWrite, gsModPlayBlock.auiLeft, gsModPlayBlock.auiRight, (uint16)uiFrames);
 	}
 	return (uint16)uiFrames;
 }
@@ -65,8 +57,9 @@ uint16 ModPlayQueued(uint16 uiWrite)
 
 //////////////////////////////////////////////////////////////////////////
 //
-// Plays the song through the sound board: fills its RAM, starts it, then
-// renders a block whenever there is room for one, until the song ends.
+// Plays the song through the sound board: renders MODPLAY_START_FRAMES,
+// starts it, then renders a block whenever there is room for one (it
+// keeps up to MODPLAY_MAX_QUEUED ahead), until the song ends.
 // The sound board plays its 32KB again and again, so after the song a
 // block of silence follows and it is stopped once it reaches it.
 //
@@ -101,7 +94,7 @@ void ModPlaySong(CModPlayer* pcPlayer, lsize uiMaxFrames)
 		}
 		uiWrite = (uint16)((uiWrite + uiWritten) & (MODPLAY_BUFFER_FRAMES - 1));
 		uiPlayed += uiWritten;
-		if (!bStarted && ((uiWrite >= MODPLAY_MAX_QUEUED - MODPLAY_BLOCK_FRAMES) || (uiPlayed >= uiMaxFrames)))
+		if (!bStarted && ((uiWrite >= MODPLAY_START_FRAMES) || (uiPlayed >= uiMaxFrames)))
 		{
 			KernalAudioSetRegister(AUDIO_FLAGS, AUDIO_FLAG_ENABLE | MODPLAY_RATE_SELECT);
 			bStarted = true;
@@ -115,10 +108,10 @@ void ModPlaySong(CModPlayer* pcPlayer, lsize uiMaxFrames)
 	//Silence after the end, then wait for the last of the song to play.
 	for (i = 0; i < MODPLAY_BLOCK_FRAMES; i++)
 	{
-		gauiModPlayLeft[i] = 0x80;
-		gauiModPlayRight[i] = 0x80;
+		gsModPlayBlock.auiLeft[i] = 0x80;
+		gsModPlayBlock.auiRight[i] = 0x80;
 	}
-	KernalAudioWrite(uiWrite, gauiModPlayLeft, gauiModPlayRight, MODPLAY_BLOCK_FRAMES);
+	KernalAudioWrite(uiWrite, gsModPlayBlock.auiLeft, gsModPlayBlock.auiRight, MODPLAY_BLOCK_FRAMES);
 	while (ModPlayQueued(uiWrite) != 0)
 	{
 	}
