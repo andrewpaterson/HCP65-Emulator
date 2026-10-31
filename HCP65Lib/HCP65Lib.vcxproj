@@ -24,9 +24,15 @@
   </PropertyGroup>
   <ItemGroup>
     <ClCompile Include="HCP65.cpp" />
+    <ClCompile Include="HCP65Device.cpp" />
+    <ClCompile Include="HCP65Registers.cpp" />
+    <ClCompile Include="HCP65Audio.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HCP65.h" />
+    <ClInclude Include="HCP65Device.h" />
+    <ClInclude Include="HCP65Registers.h" />
+    <ClInclude Include="HCP65Audio.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
