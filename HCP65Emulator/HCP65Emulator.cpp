@@ -1,4 +1,3 @@
-#include <windows.h>
 #include "BaseLib/Logger.h"
 #include "BaseLib/TypeNames.h"
 #include "BaseLib/TypeConverter.h"
@@ -19,9 +18,13 @@
 #include "WindowLib/ComponentInput.h"
 #include "WindowLib/JewelTheme.h"
 #include "WindowLib/MenuBar.h"
-#include "WinGdiLib/WinGDIWindowFactory.h"
-#include "WinInputLib/WinInput.h"
+#include "BaseLib/DiskFile.h"
+#include "WindowLib/NativeWindowFactory.h"
 #include "HCP65Lib/HCP65.h"
+#include "HCP65Lib/HCP65Audio.h"
+#include "HCP65Lib/HCP65SDCard.h"
+#include "HostAudio.h"
+#include "HCP65Emulator.h"
 #include "HCP65EmulatorTick.h"
 #include "FileMenuListener.h"
 
@@ -80,57 +83,95 @@ Ptr<CFont> GenerateFont(const char* szFontFilename, const char* szName, float32 
 
 //////////////////////////////////////////////////////////////////////////
 //
+// The kernal ROM image szFilename into the HCP65's ROM.
 //
 //////////////////////////////////////////////////////////////////////////
-int PASCAL WinMain(HINSTANCE hInstance,	HINSTANCE hPrevInstance, LPTSTR lpCmdLine, int nCmdShow)
+bool LoadKernal(CHCP65* pcHCP65, const char* szFilename)
 {
-	_CrtSetBreakAlloc(0);
+	CDiskFile	cFile;
+	uint8*		puiROM;
+	lsize		uiSize;
+	bool		bResult;
 
-	gcLogger.Init();
-	TypesInit();
-	TypeConverterInit();
-	MemoryInit();
-	DataIOInit();
-	ObjectsInit();
-
-	bool bResult;
-
-	bResult = true;
-
+	cFile.Init(szFilename);
+	if (!cFile.Open(EFM_Read))
 	{
-		CWinGDIWindowFactory		cNativeFactory;
-		CHCP65						cHCP65;
-		Ptr<CWindow>				pWindow;
-		Ptr<CHCP65EmulatorTick>		pTick;
-		Ptr<CGridContainer>			pMain;
-		Ptr<CMenuBar>				pMenuBar;
-		Ptr<CMenuContainer>			pFileMenu;
-		Ptr<CCanvas>				pScreen;
-		CFileMenuListener			cFileMenuListener;
-		Ptr<CWindowTheme>			pTheme;
-		Ptr<CFont>					pWhite;
-		Ptr<CFontColours>			pFontColours;
-		CInput						cInput;
-		CWinInput					cWinInput;
-		Ptr<CWindowInputSource>		pInputSource;
-		CComponentInput				cComponentInput;
+		cFile.Kill();
+		gcLogger.Error2(__METHOD__, " Could not open the kernal ROM [", szFilename, "].", NULL);
+		return false;
+	}
+	uiSize = (lsize)cFile.Size();
+	if (uiSize > HCP65_MPU_ROM_SIZE)
+	{
+		uiSize = HCP65_MPU_ROM_SIZE;
+	}
+	puiROM = (uint8*)malloc(uiSize);
+	bResult = cFile.Read(puiROM, uiSize, 1) == 1;
+	cFile.Close();
+	cFile.Kill();
+	if (bResult)
+	{
+		bResult = pcHCP65->LoadROM(puiROM, (size)uiSize);
+	}
+	free(puiROM);
+	if (!bResult)
+	{
+		gcLogger.Error2(__METHOD__, " Could not load the kernal ROM [", szFilename, "].", NULL);
+	}
+	return bResult;
+}
 
-		cHCP65.Init();
-		cHCP65.Reset();
 
-		cNativeFactory.Init(&gcMemoryAllocator,
-			hInstance,
-			hPrevInstance,
-			nCmdShow,
-			"HCP65Emulator");
+//////////////////////////////////////////////////////////////////////////
+//
+// The HCP65 (its kernal ROM, the sound board and an SD card board with
+// Input/SDCard.img) in a window with a menu bar, run by the window's ticks
+// until the window closes.  pcInput has the platform's keyboard and mouse.
+//
+//////////////////////////////////////////////////////////////////////////
+bool HCP65EmulatorRun(CNativeWindowFactory* pcNativeFactory, CInput* pcInput)
+{
+	CHCP65						cHCP65;
+	CHCP65Audio					cAudio;
+	CHCP65SDCard				cSDCard;
+	CHostAudio					cHostAudio;
+	Ptr<CWindow>				pWindow;
+	Ptr<CHCP65EmulatorTick>		pTick;
+	Ptr<CGridContainer>			pMain;
+	Ptr<CMenuBar>				pMenuBar;
+	Ptr<CMenuContainer>			pFileMenu;
+	Ptr<CCanvas>				pScreen;
+	CFileMenuListener			cFileMenuListener;
+	Ptr<CWindowTheme>			pTheme;
+	Ptr<CFont>					pWhite;
+	Ptr<CFontColours>			pFontColours;
+	Ptr<CWindowInputSource>		pInputSource;
+	CComponentInput				cComponentInput;
+	bool						bResult;
 
+	cHCP65.Init();
+	cAudio.Init();
+	cSDCard.Init();
+	cHostAudio.Init();
+	bResult = LoadKernal(&cHCP65, HCP65_EMULATOR_KERNAL_ROM);
+	if (!cSDCard.InsertCard(HCP65_EMULATOR_SD_CARD_IMAGE, false))
+	{
+		gcLogger.Error2(__METHOD__, " Could not insert the SD card [", HCP65_EMULATOR_SD_CARD_IMAGE, "].", NULL);
+		bResult = false;
+	}
+	cHCP65.SetDevice(HCP65_EMULATOR_SD_SOCKET, &cSDCard);
+	cHCP65.SetDevice(HCP65_EMULATOR_AUDIO_SOCKET, &cAudio);
+	cHCP65.Reset();
+
+	if (bResult)
+	{
 		//Validating every object each time one changes is too slow for the text's glyphs.  They are validated once at the end.
 		gcObjects.DisableValidation();
 
 		//The window is in the root so that changing pointers into its components doesn't make the objects work out again which
 		//of them are still on the stack.  Its tick is allocated, not on the stack, because stack objects can't be under the root.
-		pTick = OMalloc<CHCP65EmulatorTick>(&cHCP65);
-		pWindow = OMalloc<CWindow>("HCP65 Emulator", &cNativeFactory, pTick, OMalloc<CClearCanvasDraw>(JEWEL_PANEL), CFT_RGBX, CCO_BGR, CRGB_24bit, ARGB_8bit);
+		pTick = OMalloc<CHCP65EmulatorTick>(&cHCP65, &cAudio, &cHostAudio);
+		pWindow = OMalloc<CWindow>("HCP65 Emulator", pcNativeFactory, pTick, OMalloc<CClearCanvasDraw>(JEWEL_PANEL), CFT_RGBX, CCO_BGR, CRGB_24bit, ARGB_8bit);
 		ORoot()->Add(pWindow);
 
 		//The font is white and coloured as it is drawn.
@@ -155,14 +196,7 @@ int PASCAL WinMain(HINSTANCE hInstance,	HINSTANCE hPrevInstance, LPTSTR lpCmdLin
 			cFileMenuListener.Init(pWindow, pFileMenu);
 			pMenuBar->AddListener(&cFileMenuListener);
 
-			//The devices are described by the XML so they are added after it is read.
-			cInput.Init(NULL);
-			cInput.Read("../../CommonLibraries/WinInputLib/xml");
-			cWinInput.Init(NULL, false);
-			cInput.AddNativeInput(&cWinInput);
-			cNativeFactory.SetRawInput(WinRawInputCallback, cWinInput.GetRaw());
-
-			pInputSource = OMalloc<CWindowInputSource>(&cInput);
+			pInputSource = OMalloc<CWindowInputSource>(pcInput);
 			cComponentInput.Init(&pInputSource, &pWindow);
 			cComponentInput.AddKeyboards();
 			cComponentInput.AddMice();
@@ -175,11 +209,8 @@ int PASCAL WinMain(HINSTANCE hInstance,	HINSTANCE hPrevInstance, LPTSTR lpCmdLin
 			cFileMenuListener.Kill();
 
 			pWindow->SetComponentInput(NULL);
-			cNativeFactory.SetRawInput(NULL, NULL);
 			cComponentInput.Kill();
 			pInputSource = NULL;
-			cInput.Kill();
-			cWinInput.Kill();
 		}
 		else
 		{
@@ -200,28 +231,12 @@ int PASCAL WinMain(HINSTANCE hInstance,	HINSTANCE hPrevInstance, LPTSTR lpCmdLin
 
 		gcObjects.EnableValidation();
 		gcObjects.ValidateObjectsConsistency();
-
-		cNativeFactory.Kill();
-		cHCP65.Kill();
 	}
 
-	ObjectsFlush();
-	ObjectsKill();
-	DataIOKill();
-	MemoryKill();
-	TypeConverterKill();
-	TypesKill();
-
-	gcLogger.Kill();
-
-	_CrtDumpMemoryLeaks();
-
-	if (bResult)
-	{
-		return 0;
-	}
-	else
-	{
-		return 1;
-	}
+	cHostAudio.Kill();
+	cHCP65.Kill();
+	cSDCard.Kill();
+	cAudio.Kill();
+	return bResult;
 }
+

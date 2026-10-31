@@ -10,12 +10,24 @@
     <ClCompile Include="FileMenuListener.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="HCP65EmulatorWindows.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="HostAudio_Windows.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HCP65EmulatorTick.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="FileMenuListener.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="HCP65Emulator.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="HostAudio.h">
       <Filter>Source</Filter>
     </ClInclude>
   </ItemGroup>

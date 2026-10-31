@@ -12,7 +12,7 @@
 #define HCP65_REMAP_TABLE			0x70000		//In MPU RAM: a 256 byte page of physical banks per process.
 #define HCP65_NUM_DEVICE_SLOTS		20			//0 to 19; 8 to 15 do not exist.
 #define HCP65_CRYSTAL_RATE			32768		//The timer and sound crystal, in Hz.
-#define HCP65_DEFAULT_CLOCK_RATE	10000000	//CPU cycles per second.
+#define HCP65_DEFAULT_CLOCK_RATE	25000000	//CPU cycles per second: the board's MPU clock (an LTC6903 set to 25MHz).
 
 
 //The HCP65 computer: a CFast65C816, the processor board's memory and registers, and the devices in its
