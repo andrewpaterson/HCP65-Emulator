@@ -1,5 +1,6 @@
 #include "BaseLib/FatVolume.h"
 #include "BaseLib/TrueMallocator.h"
+#include "BaseLib/GlobalMemory.h"
 #include "KernalDevices.h"
 #include "KernalSDCard.h"
 #include "KernalProcess.h"
@@ -68,6 +69,9 @@ int main(void)
 	SKernalDevice*	psSDCardBoard;
 	EFatCode		eResult;
 	uint16			uiSlot;
+
+	//BaseLib's memory: the allocators a chunk file (an executable) names are looked up there.
+	MemoryInit();
 
 	KernalScanDevices();
 	gsKernalStatus.uiState = KERNAL_STATE_DEVICES_SCANNED;
