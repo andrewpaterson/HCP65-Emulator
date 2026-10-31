@@ -11,14 +11,17 @@
 ;      (process IDs $FC-$FF).  The rest of RAM banks 4-7 is free.
 ;      (On the real machine the main memory channel must map the 4MB memory card to 4MB-8MB before the tables are
 ;      copied; not done yet.)
-;   4. Goes on in RAM at StartInRAM: sets the stack and the direct page, calls the init table's routines (each
-;      global's R_Initialise, in link order) and main, then waits for interrupts.
+;   4. Goes on in RAM at StartInRAM: sets the stack and the direct page, clears bss, sets up the heap, calls the init
+;      table's routines (each global's R_Initialise, in link order) and main, then waits for interrupts.
 ;
 ; Bank 0 holds only the stack, the direct page, the vectors and a jml stub per vector; the code is in bank 1 onwards
 ; and runs at the address it is linked at once it is in RAM.
 
 
-KERNAL_STACK_TOP	= 0xEFFF
+KERNAL_STACK_TOP	= 0xBFFF		; The kernal's stack.
+KERNAL_COP_STACK_TOP	= 0xCFFF		; The stack kernal calls run on.  $D000-$EFFF is left free: a process's
+							; S is there, and an interrupt taken in kernel mode while S still holds it
+							; (before the kernal switches stacks) pushes there.
 KERNAL_ROM_OFFSET	= 0x80000		; Where an address's ROM byte is once ROM and RAM have swapped.
 KERNAL_REMAP_TABLE	= 0x07FC00		; Process $FC's page of the remap table.
 
@@ -107,13 +110,55 @@ StartInRAM:
 		phk
 		plb
 
-		; Libc65's heap reads the memory size from $FF0300 (the test machines' register).  On the HCP65 that's plain
-		; main memory, so say 16MB: the heap is then main memory from $200000 to $FEFFFF, which the SD Card Board's
-		; reads can reach.
+		; bss (globals with no initialiser) isn't in the image.  Up to 64KB is cleared a word at a time (a long address
+		; plus X crosses banks; an odd size clears the byte after it too, where nothing is yet), more a byte at a time.
+		lda __bss_end & 0xFFFF
+		sec
+		sbc __bss_start & 0xFFFF
+		tay
+		lda __bss_end >> 16
+		sbc __bss_start >> 16
+		bne StartClearLarge
+		tya
+		inc A
+		lsr A
+		beq StartCleared
+		tay
+		ldx 0
 		lda 0
-		sta [0xFF0300]:24
-		lda 0x0100
-		sta [0xFF0302]:24
+StartClearWord:
+		sta [__bss_start + X]:24
+		inx
+		inx
+		dey
+		bne StartClearWord
+		bra StartCleared
+StartClearLarge:
+		lda __bss_start & 0xFFFF
+		sta [D + 0]
+		lda __bss_start >> 16
+		sta [D + 2]
+StartClear:
+		lda [D + 0]
+		cmp __bss_end & 0xFFFF
+		bne StartClearByte
+		lda [D + 2]
+		cmp __bss_end >> 16
+		beq StartCleared
+StartClearByte:
+		sep m
+		lda 0
+		sta [[D + 0]:24]
+		rep m
+		inc [D + 0]
+		bne StartClear
+		inc [D + 2]
+		bra StartClear
+StartCleared:
+
+		; The heap before anything can allocate.
+		jsl _KernalInitHeap
+		.width (A, X), 16
 
 		lda __init_start & 0xFFFF
 		sta [D + 0]
@@ -174,10 +219,85 @@ __Exit:
 		jml KernalIdle
 
 
-		; Interrupts are not handled yet: they return at once.
-KernalCop:
+		; Interrupts are not handled yet: they return at once.  (An interrupt taken in user mode pushed its frame on
+		; the process's stack before the vector pull raised the interrupt depth, and RTI drops the depth again before
+		; it pulls, so the frame comes back from the same stack.)
 KernalBrk:
 KernalAbort:
 KernalNmi:
 KernalIrq:
+		rti
+
+
+		; A kernal call: COP n from a process.  Its frame is on the process's stack and S still points there (in MPU
+		; RAM now), so the registers are saved without the stack, then the call runs on the kernal call stack.
+		; KernalCopCall (C++) reads the signature byte through the remap table.  The exit call goes back to whoever
+		; ran the process (KernalEnterUser's caller); every other call returns to the process.
+KernalCop:
+		rep (m, x)
+		sta [_gsKernalCall + 0]:24
+		txa
+		sta [_gsKernalCall + 2]:24
+		tya
+		sta [_gsKernalCall + 4]:24
+		tsc
+		sta [_gsKernalCall + 6]:24
+		tdc
+		sta [_gsKernalCall + 8]:24
+		lda KERNAL_COP_STACK_TOP
+		tcs
+		lda 0
+		sep m
+		phb
+		pla
+		rep m
+		sta [_gsKernalCall + 10]:24
+		lda 0
+		tcd
+		phk
+		plb
+		jsl _KernalCopCall
+		.width (A, X), 16
+		lda [_gsKernalCall + 14]:24
+		bne KernalCopExit
+
+		sep m
+		lda [_gsKernalCall + 10]:24
+		pha
+		plb
+		rep m
+		lda [_gsKernalCall + 8]:24
+		tcd
+		lda [_gsKernalCall + 6]:24
+		tcs
+		lda [_gsKernalCall + 4]:24
+		tay
+		lda [_gsKernalCall + 2]:24
+		tax
+		lda [_gsKernalCall + 0]:24
+		rti
+
+		; The process has exited: back on the kernal's stack, return from KernalEnterUser.  The COP's vector pull
+		; left the interrupt depth where KernalEnterUser's RTI found it.
+KernalCopExit:
+		.width (A, X), 16
+		lda [_gsKernalCall + 12]:24
+		tcs
+		pld
+		plb
+		rtl
+
+
+		; extern "C" void KernalEnterUser(void): RTI into the process.  KernalRunExecutable put the frame (P, PC and
+		; the program bank) at the top of the process's stack and its S in gsKernalCall.uiUserS.  The RTI drops the
+		; interrupt depth to 0 (user mode) before it pulls, so it pulls from the process's stack.
+		.global _KernalEnterUser
+_KernalEnterUser:
+		.width (A, X), 16
+		phb
+		phd
+		tsc
+		sta [_gsKernalCall + 12]:24
+		lda [_gsKernalCall + 6]:24
+		tcs
 		rti

@@ -1,12 +1,33 @@
 #include "BaseLib/FatVolume.h"
+#include "BaseLib/TrueMallocator.h"
 #include "KernalDevices.h"
 #include "KernalSDCard.h"
+#include "KernalProcess.h"
 #include "Kernal.h"
 
 
-SKernalStatus	gsKernalStatus = { KERNAL_STATE_STARTING, 0, 0, 0, 0, 0, 0 };
+SKernalStatus	gsKernalStatus = { KERNAL_STATE_STARTING, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 CKernalSDCard	gcKernalSDCard;
 CFatVolume		gcKernalVolume;
+
+
+//Libc65's heap.
+extern CTrueMallocator	gcHeap;
+extern bool				gbHeap;
+
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Called by the start up before the init table: the kernal's heap is main
+// memory on the 4MB card (which is always there), where the SD Card Board
+// can reach it too.
+//
+//////////////////////////////////////////////////////////////////////////
+extern "C" void KernalInitHeap(void)
+{
+	gcHeap.Init((void*)KERNAL_HEAP_START, KERNAL_HEAP_END - KERNAL_HEAP_START);
+	gbHeap = true;
+}
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -38,7 +59,8 @@ static void KernalEnableDevice(uint16 uiSlot)
 //
 // Called by the start up once MPU RAM holds the kernal and its globals are
 // initialised.  Running in kernel mode, native, with interrupts disabled.
-// Finds the devices, brings up the SD card and mounts its FAT32 volume.
+// Finds the devices, brings up the SD card, mounts its FAT32 volume and
+// runs boot.exe from it.
 //
 //////////////////////////////////////////////////////////////////////////
 int main(void)
@@ -79,5 +101,8 @@ int main(void)
 	gsKernalStatus.uiNumClusters = gcKernalVolume.GetNumClusters();
 	gsKernalStatus.uiFreeClusters = gcKernalVolume.GetTotalFreeClusters();
 	gsKernalStatus.uiState = KERNAL_STATE_MOUNTED;
+
+	gsKernalStatus.uiBootResult = KernalRunExecutable(KERNAL_BOOT_FILE, &gsKernalStatus.uiExitCode);
+	gsKernalStatus.uiState = (gsKernalStatus.uiBootResult == KERNAL_PROCESS_EXITED) ? KERNAL_STATE_BOOT_EXITED : KERNAL_STATE_BOOT_FAILED;
 	return 0;
 }
