@@ -5,6 +5,7 @@
 #include "HCP65Lib/HCP65SDCard.h"
 #include "TestLib/Assert.h"
 #include "HCP65KernalBuilder.h"
+#include "HCP65ExeBuilder.h"
 
 
 //Relative to the test's directory (TestHCP65Lib/TestHCP65Lib), as Visual Studio runs it.
@@ -13,6 +14,8 @@
 #define TEST_HCP65_INPUT			".." _FS_ ".." _FS_ "HCP65Emulator" _FS_ "Input"
 #define TEST_HCP65_SD_CARD_IMAGE	TEST_HCP65_INPUT _FS_ "SDCard.img"
 #define TEST_HCP65_KERNAL_ROM		TEST_HCP65_INPUT _FS_ "Kernal.rom"
+#define TEST_HCP65_USER				".." _FS_ ".." _FS_ "HCP65Lib" _FS_ "User"
+#define TEST_HCP65_BOOT_PROGRAM		"Input" _FS_ "Boot"
 
 #define TEST_HCP65_CLOCK_RATE		10000000
 #define TEST_HCP65_SD_SOCKET		2			//Socket 1 is the main memory channel.
@@ -21,6 +24,9 @@
 //The kernal's states (Kernal/Kernal.h, which is W65C816 code).
 #define TEST_KERNAL_STATE_DEVICES_SCANNED	2
 #define TEST_KERNAL_STATE_MOUNTED			6
+#define TEST_KERNAL_STATE_BOOT_FAILED		7
+#define TEST_KERNAL_STATE_BOOT_EXITED		8
+#define TEST_KERNAL_PROCESS_EXITED			5
 #define TEST_KERNAL_FAT32					3
 
 
@@ -34,6 +40,9 @@ struct STestKernalStatus
 	uint32	uiNumSectors;
 	uint32	uiNumClusters;
 	uint32	uiFreeClusters;
+	uint16	uiBootResult;
+	uint16	uiExitCode;
+	uint16	uiUserValue;
 };
 
 
@@ -53,15 +62,45 @@ static void TestKernalReadStatus(uint8* puiRAM, uint32 uiAddress, STestKernalSta
 	psStatus->uiNumSectors = (uint32)p[8] | ((uint32)p[9] << 8) | ((uint32)p[10] << 16) | ((uint32)p[11] << 24);
 	psStatus->uiNumClusters = (uint32)p[12] | ((uint32)p[13] << 8) | ((uint32)p[14] << 16) | ((uint32)p[15] << 24);
 	psStatus->uiFreeClusters = (uint32)p[16] | ((uint32)p[17] << 8) | ((uint32)p[18] << 16) | ((uint32)p[19] << 24);
+	psStatus->uiBootResult = (uint16)(p[20] | (p[21] << 8));
+	psStatus->uiExitCode = (uint16)(p[22] | (p[23] << 8));
+	psStatus->uiUserValue = (uint16)(p[24] | (p[25] << 8));
+}
+
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Builds the test's boot.exe (Input/Boot) and puts it on the SD card image.
+//
+//////////////////////////////////////////////////////////////////////////
+static bool TestKernalPutBootExe(void)
+{
+	CHCP65ExeBuilder	cExe;
+	bool				bBuilt;
+	static const char*	aszUnits[] = { "Boot.cpp", NULL };
+
+	cExe.Init();
+	bBuilt = cExe.Build(TEST_HCP65_COMMON, TEST_HCP65_USER, TEST_HCP65_BOOT_PROGRAM, aszUnits);
+	AssertString("", cExe.GetErrors());
+	AssertTrue(bBuilt);
+	if (bBuilt)
+	{
+		AssertTrue(cExe.GetExecutableSize() > 0);
+		bBuilt = HCP65PutFileOnImage(TEST_HCP65_SD_CARD_IMAGE, "\\boot.exe", cExe.GetExecutable(), cExe.GetExecutableSize());
+		AssertTrue(bBuilt);
+	}
+	cExe.Kill();
+	return bBuilt;
 }
 
 
 //////////////////////////////////////////////////////////////////////////
 //
 // Builds the kernal ROM, boots it with the sound board and the SD Card
-// Board (holding Input/SDCard.img, not written back) and checks that it
-// found both, copied the math tables to main memory and mounted the FAT32
-// volume.  The ROM image is written to Input/Kernal.rom for the emulator.
+// Board (holding Input/SDCard.img with the test's boot.exe on it, not
+// written back) and checks that it found both, copied the math tables to
+// main memory, mounted the FAT32 volume and ran boot.exe in user mode.  The
+// ROM image is written to Input/Kernal.rom for the emulator.
 //
 //////////////////////////////////////////////////////////////////////////
 void TestHCP65KernalBoot(void)
@@ -77,6 +116,11 @@ void TestHCP65KernalBoot(void)
 	uint8*				puiROM;
 	int					i;
 	bool				bBuilt;
+
+	if (!TestKernalPutBootExe())
+	{
+		return;
+	}
 
 	cBuilder.Init();
 	bBuilt = cBuilder.Build(TEST_HCP65_COMMON, TEST_HCP65_KERNAL);
@@ -107,7 +151,7 @@ void TestHCP65KernalBoot(void)
 	{
 		cHCP65.Run(5000000);
 		TestKernalReadStatus(puiRAM, uiStatus, &sStatus);
-		if ((sStatus.uiState > TEST_KERNAL_STATE_DEVICES_SCANNED) || cHCP65.IsStopped())
+		if ((sStatus.uiState >= TEST_KERNAL_STATE_BOOT_FAILED) || ((sStatus.uiState > TEST_KERNAL_STATE_DEVICES_SCANNED) && (sStatus.uiState < TEST_KERNAL_STATE_MOUNTED)) || cHCP65.IsStopped())
 		{
 			break;
 		}
@@ -116,7 +160,7 @@ void TestHCP65KernalBoot(void)
 	AssertFalse(cHCP65.IsStopped());
 	AssertTrue(cHCP65.IsNativeLatched());
 	AssertTrue(cHCP65.IsKernelMode());
-	AssertInt(TEST_KERNAL_STATE_MOUNTED, sStatus.uiState);
+	AssertInt(TEST_KERNAL_STATE_BOOT_EXITED, sStatus.uiState);
 	AssertInt(0, sStatus.uiSDError);
 	AssertInt(0, sStatus.uiFatCode);
 	AssertInt(TEST_KERNAL_FAT32, sStatus.uiFileSystem);
@@ -125,6 +169,14 @@ void TestHCP65KernalBoot(void)
 	AssertTrue(sStatus.uiFreeClusters <= sStatus.uiNumClusters);
 	AssertTrue(cSDCard.NumSectorsRead() > 0);
 	AssertInt(0, cSDCard.NumSectorsWritten());
+
+	//boot.exe ran in user mode (process $FF), multiplied and divided with the tables, gave the kernal 300 * 200 / 3
+	//and exited with 42; the kernal is back in kernel mode.
+	AssertInt(TEST_KERNAL_PROCESS_EXITED, sStatus.uiBootResult);
+	AssertInt(42, sStatus.uiExitCode);
+	AssertInt(20000, sStatus.uiUserValue);
+	AssertInt(0xFF, cHCP65.GetProcessID());
+	AssertInt(1, cHCP65.GetInterruptDepth());
 
 	//The SD Card Board was enabled and the sound board left in reset.
 	AssertInt(1 << TEST_HCP65_SD_SOCKET, cHCP65.GetDeviceEnables());

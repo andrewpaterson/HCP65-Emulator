@@ -6,6 +6,7 @@
 
 #define HCP65_ROM_SIZE				0x80000		//512KB of flash.
 #define HCP65_ROM_CODE_END			0x40000		//The kernal's code and data: ROM banks 0-3, copied to MPU RAM.
+#define HCP65_RAM_END				0x07FC00	//MPU RAM below the remap table: the kernal's code, data and bss.
 #define HCP65_TABLES_START			0x400000	//The math tables in main memory: ROM banks 4-7 copied there.
 #define HCP65_TABLES_END			0x440000
 

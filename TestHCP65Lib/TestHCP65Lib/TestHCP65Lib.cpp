@@ -2,6 +2,7 @@
 #include "BaseLib/TypeConverter.h"
 #include "BaseLib/NumberControl.h"
 #include "BaseLib/LeakDetector.h"
+#include "BaseLib/GlobalMemory.h"
 #include "TestLib/Assert.h"
 
 
@@ -23,10 +24,12 @@ int __cdecl main(int argc, char** argv)
 	TypesInit();
 	TypeConverterInit();
 	NumberInit();
+	MemoryInit();
 
 	TestHCP65Machine();
 	TestHCP65Kernal();
 
+	MemoryKill();
 	NumberKill();
 	TypeConverterKill();
 	TypesKill();

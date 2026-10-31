@@ -10,7 +10,7 @@
 static const char* gaszHCP65Libc65[] = { "string.cpp", "stdlib.cpp", "ctype.cpp", "time.cpp", "math.cpp", "softfloat.cpp", "new.cpp", "signal.cpp", "stdio.cpp", "host.cpp", "string816.asm", "string816_16.asm", "softfloat816.asm", NULL };
 
 //The kernal's units, linked only when used.  Start.asm and Kernal.cpp (main) are always linked.
-static const char* gaszHCP65KernalUnits[] = { "KernalDevices.cpp", "KernalSDCard.cpp", NULL };
+static const char* gaszHCP65KernalUnits[] = { "KernalDevices.cpp", "KernalSDCard.cpp", "KernalProcess.cpp", NULL };
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -81,6 +81,12 @@ bool CHCP65KernalBuilder::Build(const char* szCommonLibraries, const char* szKer
 	bResult = mcBuilder.AddVisualStudioProject("BaseLib", szPath.Text(), true);
 	szPath.Kill();
 
+	//The executable format is Assembler65Lib's object.
+	szPath.Init(szCommon);
+	cFileUtil.AppendToPath(&szPath, "Assembler65Lib");
+	mcBuilder.AddUnit("Assembler65Lib", szPath.Text(), "Asm65Object.cpp", true);
+	szPath.Kill();
+
 	szPath.Init(szCommon);
 	cFileUtil.AppendToPath(&szPath, "Libc65");
 	for (i = 0; gaszHCP65Libc65[i]; i++)
@@ -89,8 +95,9 @@ bool CHCP65KernalBuilder::Build(const char* szCommonLibraries, const char* szKer
 	}
 	szPath.Kill();
 
-	//Code and data flow from bank 1 and must stay below the tables' ROM banks.
-	mcBuilder.SetLimit(HCP65_ROM_CODE_END);
+	//Code and data flow from bank 1; bss after them may go up to the remap table, but what is in the image must stay
+	//below the tables' ROM banks (MakeImage checks).
+	mcBuilder.SetLimit(HCP65_RAM_END);
 	bResult &= mcBuilder.Link();
 	mszErrors.Append(mcBuilder.GetErrors());
 	szKernalDirectory.Kill();
