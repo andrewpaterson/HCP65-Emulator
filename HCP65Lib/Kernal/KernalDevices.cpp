@@ -112,3 +112,28 @@ void KernalWriteRegister(uint8 uiRegister, uint8 uiValue)
 {
 	((volatile uint8*)KERNAL_REGISTERS)[uiRegister] = uiValue;
 }
+
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Lets the device in uiSlot run (the processor board holds every device in
+// reset until it is enabled).
+//
+//////////////////////////////////////////////////////////////////////////
+void KernalEnableDevice(uint16 uiSlot)
+{
+	uint8	uiRegister;
+	uint8	uiBit;
+
+	if (uiSlot >= 16)
+	{
+		uiRegister = 5;
+		uiBit = (uint8)(1 << (uiSlot - 16));
+	}
+	else
+	{
+		uiRegister = 3;
+		uiBit = (uint8)(1 << uiSlot);
+	}
+	KernalWriteRegister(uiRegister, (uint8)(KernalReadRegister(uiRegister) | uiBit));
+}

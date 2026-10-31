@@ -1,11 +1,19 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "BaseLib/FileUtil.h"
+#include "BaseLib/ArrayUint8.h"
+#include "BaseLib/GlobalDataTypesIO.h"
+#include "StandardLib/Objects.h"
+#include "SupportLib/MODReader.h"
+#include "SupportLib/ModPlayer.h"
 #include "HCP65Lib/HCP65.h"
 #include "HCP65Lib/HCP65Audio.h"
 #include "HCP65Lib/HCP65SDCard.h"
 #include "TestLib/Assert.h"
 #include "HCP65KernalBuilder.h"
 #include "HCP65ExeBuilder.h"
+#include "Input/ModPlay/ModPlaySamples.h"
 
 
 //Relative to the test's directory (TestHCP65Lib/TestHCP65Lib), as Visual Studio runs it.
@@ -16,8 +24,15 @@
 #define TEST_HCP65_KERNAL_ROM		TEST_HCP65_INPUT _FS_ "Kernal.rom"
 #define TEST_HCP65_USER				".." _FS_ ".." _FS_ "HCP65Lib" _FS_ "User"
 #define TEST_HCP65_BOOT_PROGRAM		"Input" _FS_ "Boot"
+#define TEST_HCP65_MODPLAY_PROGRAM	"Input" _FS_ "ModPlay"
+#define TEST_HCP65_SONG				TEST_HCP65_INPUT _FS_ "SpaceDebris.mod"
 
-#define TEST_HCP65_CLOCK_RATE		10000000
+//The test's machine is fast enough that modplay.exe never runs out of samples, so what it plays is exactly what the host
+//renders.
+#define TEST_HCP65_CLOCK_RATE		4000000000ULL
+#define TEST_HCP65_RUN_CYCLES		20000000
+#define TEST_HCP65_MAX_RUNS			2000
+#define TEST_MODPLAY_SECONDS		1			//boot.exe's argument, patched into the test's copy of the ROM.
 #define TEST_HCP65_SD_SOCKET		2			//Socket 1 is the main memory channel.
 #define TEST_HCP65_AUDIO_SOCKET		16
 
@@ -43,6 +58,7 @@ struct STestKernalStatus
 	uint16	uiBootResult;
 	uint16	uiExitCode;
 	uint16	uiUserValue;
+	uint16	uiBootArgument;
 };
 
 
@@ -65,28 +81,34 @@ static void TestKernalReadStatus(uint8* puiRAM, uint32 uiAddress, STestKernalSta
 	psStatus->uiBootResult = (uint16)(p[20] | (p[21] << 8));
 	psStatus->uiExitCode = (uint16)(p[22] | (p[23] << 8));
 	psStatus->uiUserValue = (uint16)(p[24] | (p[25] << 8));
+	psStatus->uiBootArgument = (uint16)(p[26] | (p[27] << 8));
 }
 
 
 //////////////////////////////////////////////////////////////////////////
 //
-// Builds the test's boot.exe (Input/Boot) and puts it on the SD card image.
+// Builds an executable from Input/szDirectory and puts it on the SD card
+// image as szName.
 //
 //////////////////////////////////////////////////////////////////////////
-static bool TestKernalPutBootExe(void)
+static bool TestKernalPutExe(const char* szName, const char* szDirectory, const char** aszUnits, const char** aszLibraries, uint32 uiHeapSize)
 {
 	CHCP65ExeBuilder	cExe;
 	bool				bBuilt;
-	static const char*	aszUnits[] = { "Boot.cpp", NULL };
 
 	cExe.Init();
-	bBuilt = cExe.Build(TEST_HCP65_COMMON, TEST_HCP65_USER, TEST_HCP65_BOOT_PROGRAM, aszUnits);
+	cExe.SetHeapSize(uiHeapSize);
+	bBuilt = cExe.Build(TEST_HCP65_COMMON, TEST_HCP65_USER, szDirectory, aszUnits, aszLibraries);
 	AssertString("", cExe.GetErrors());
 	AssertTrue(bBuilt);
 	if (bBuilt)
 	{
 		AssertTrue(cExe.GetExecutableSize() > 0);
-		bBuilt = HCP65PutFileOnImage(TEST_HCP65_SD_CARD_IMAGE, "\\boot.exe", cExe.GetExecutable(), cExe.GetExecutableSize());
+		if (getenv("TEST_HCP65_VERBOSE"))
+		{
+			printf("%s: %d bytes\n", szName, (int)cExe.GetExecutableSize());
+		}
+		bBuilt = HCP65PutFileOnImage(TEST_HCP65_SD_CARD_IMAGE, szName, cExe.GetExecutable(), cExe.GetExecutableSize());
 		AssertTrue(bBuilt);
 	}
 	cExe.Kill();
@@ -96,11 +118,118 @@ static bool TestKernalPutBootExe(void)
 
 //////////////////////////////////////////////////////////////////////////
 //
+// Puts boot.exe (Input/Boot), modplay.exe (Input/ModPlay) and the song it
+// plays on the SD card image.
+//
+//////////////////////////////////////////////////////////////////////////
+static bool TestKernalPutFiles(void)
+{
+	static const char*	aszBootUnits[] = { "Boot.cpp", NULL };
+	static const char*	aszModPlayUnits[] = { "ModPlay.cpp", NULL };
+	static const char*	aszModPlayLibraries[] = { "StandardLib", "SupportLib", NULL };
+	FILE*				pcFile;
+	CArrayUint8			acSong;
+	long				iSize;
+	bool				bResult;
+
+	if (!TestKernalPutExe("\\boot.exe", TEST_HCP65_BOOT_PROGRAM, aszBootUnits, NULL, HCP65_EXE_DEFAULT_HEAP))
+	{
+		return false;
+	}
+	if (!TestKernalPutExe("\\modplay.exe", TEST_HCP65_MODPLAY_PROGRAM, aszModPlayUnits, aszModPlayLibraries, MODPLAY_HEAP_SIZE))
+	{
+		return false;
+	}
+
+	pcFile = fopen(TEST_HCP65_SONG, "rb");
+	AssertNotNull(pcFile);
+	if (!pcFile)
+	{
+		return false;
+	}
+	fseek(pcFile, 0, SEEK_END);
+	iSize = ftell(pcFile);
+	fseek(pcFile, 0, SEEK_SET);
+	acSong.Init();
+	acSong.Resize((size)iSize);
+	bResult = fread(acSong.GetData(), 1, (size_t)iSize, pcFile) == (size_t)iSize;
+	fclose(pcFile);
+	bResult = bResult && HCP65PutFileOnImage(TEST_HCP65_SD_CARD_IMAGE, MODPLAY_FILE, acSong.GetData(), acSong.NumElements());
+	AssertTrue(bResult);
+	acSong.Kill();
+	return bResult;
+}
+
+
+//////////////////////////////////////////////////////////////////////////
+//
+//
+//////////////////////////////////////////////////////////////////////////
+static void TestKernalAppend(CArrayUint8* pacDest, uint8* puiSource, uint32 uiLength)
+{
+	size	uiOld;
+
+	uiOld = pacDest->NumElements();
+	pacDest->Resize(uiOld + (size)uiLength);
+	memcpy(pacDest->GetData() + uiOld, puiSource, uiLength);
+}
+
+
+//////////////////////////////////////////////////////////////////////////
+//
+// What modplay.exe should play in uiFrames frames: CModPlayer on the host
+// with its settings, a block at a time, as left/right pairs.
+//
+//////////////////////////////////////////////////////////////////////////
+static void TestKernalRenderSong(lsize uiFrames, CArrayUint8* pacFrames)
+{
+	CModPlayer		cPlayer;
+	int16			aiStereo[MODPLAY_BLOCK_FRAMES * 2];
+	uint8			auiSamples[MODPLAY_BLOCK_FRAMES * 2];
+	lsize			uiDone;
+	lsize			uiBlock;
+	lsize			i;
+
+	DataIOInit();
+	ObjectsInit();
+	Ptr<CModSong> pcSong = LoadMOD((char*)TEST_HCP65_SONG);
+	AssertTrue(pcSong.IsNotNull());
+	if (pcSong.IsNotNull())
+	{
+		cPlayer.Init(pcSong, MODPLAY_SAMPLE_RATE, MI_Nearest, 1.0);
+		for (uiDone = 0; uiDone < uiFrames; uiDone += uiBlock)
+		{
+			uiBlock = ((uiFrames - uiDone) < MODPLAY_BLOCK_FRAMES) ? (uiFrames - uiDone) : MODPLAY_BLOCK_FRAMES;
+			uiBlock = cPlayer.Render(aiStereo, uiBlock);
+			if (uiBlock == 0)
+			{
+				break;
+			}
+			for (i = 0; i < uiBlock * 2; i++)
+			{
+				auiSamples[i] = ModPlaySample(aiStereo[i]);
+			}
+			TestKernalAppend(pacFrames, auiSamples, (uint32)(uiBlock * 2));
+		}
+		cPlayer.Kill();
+	}
+	pcSong = NULL;
+	ObjectsKill(false);
+	DataIOKill();
+}
+
+
+//////////////////////////////////////////////////////////////////////////
+//
 // Builds the kernal ROM, boots it with the sound board and the SD Card
-// Board (holding Input/SDCard.img with the test's boot.exe on it, not
-// written back) and checks that it found both, copied the math tables to
-// main memory, mounted the FAT32 volume and ran boot.exe in user mode.  The
-// ROM image is written to Input/Kernal.rom for the emulator.
+// Board (holding Input/SDCard.img with the test's boot.exe, modplay.exe and
+// Space Debris on it, not written back) and checks that it found both,
+// copied the math tables to main memory, mounted the FAT32 volume and ran
+// boot.exe in user mode, which ran modplay.exe as a second process: it
+// played the first TEST_MODPLAY_SECONDS of the song through the sound
+// board as CModPlayer does on the host.  The ROM image is written to
+// Input/Kernal.rom for the emulator (where boot.exe's argument is zero:
+// modplay.exe plays the whole song).
 //
 //////////////////////////////////////////////////////////////////////////
 void TestHCP65KernalBoot(void)
@@ -110,14 +239,25 @@ void TestHCP65KernalBoot(void)
 	CHCP65Audio			cAudio;
 	CHCP65SDCard		cSDCard;
 	STestKernalStatus	sStatus;
+	CArrayUint8			acPlayed;
+	CArrayUint8			acExpected;
+	uint8				auiFrames[0x1000 * 2];
 	uint32				uiStatus;
+	uint32				uiArgument;
+	uint32				uiSeconds;
+	uint64				uiRunCycles;
+	uint32				uiFrames;
+	uint32				uiFirstDifference;
+	uint32				uiExpectedFrames;
 	uint8*				puiRAM;
 	uint8*				puiMain;
 	uint8*				puiROM;
+	uint8*				puiPlayed;
 	int					i;
 	bool				bBuilt;
+	bool				bSilence;
 
-	if (!TestKernalPutBootExe())
+	if (!TestKernalPutFiles())
 	{
 		return;
 	}
@@ -135,8 +275,22 @@ void TestHCP65KernalBoot(void)
 	AssertTrue(cBuilder.GetCodeEnd() <= HCP65_ROM_CODE_END);
 	AssertTrue(cBuilder.GetSymbol("_gsKernalStatus", &uiStatus));
 	AssertTrue(cBuilder.Write(TEST_HCP65_KERNAL_ROM));
-	puiROM = cBuilder.GetROM();
 
+	//guiKernalBootArgument is image data: in the ROM at its MPU RAM address (the kernal's status is set by the start
+	//up).  boot.exe gets the boot argument.
+	puiROM = cBuilder.GetROM();
+	AssertTrue(cBuilder.GetSymbol("_guiKernalBootArgument", &uiArgument));
+	AssertInt(0xFFFF, (int32)(puiROM[uiArgument] | (puiROM[uiArgument + 1] << 8)));
+	//TEST_MODPLAY_SECONDS and TEST_HCP65_RUN_CYCLES (environment) override them, to time modplay.exe.
+	uiSeconds = getenv("TEST_MODPLAY_SECONDS") ? (uint32)atoi(getenv("TEST_MODPLAY_SECONDS")) : TEST_MODPLAY_SECONDS;
+	uiRunCycles = getenv("TEST_HCP65_RUN_CYCLES") ? (uint64)atoll(getenv("TEST_HCP65_RUN_CYCLES")) : TEST_HCP65_RUN_CYCLES;
+	puiROM[uiArgument] = (uint8)uiSeconds;
+	puiROM[uiArgument + 1] = (uint8)(uiSeconds >> 8);
+
+	if (getenv("TEST_HCP65_VERBOSE"))
+	{
+		printf("status at $%06X, boot argument at $%06X\n", uiStatus, uiArgument);
+	}
 	cHCP65.Init(TEST_HCP65_CLOCK_RATE);
 	cAudio.Init();
 	cSDCard.Init();
@@ -146,11 +300,24 @@ void TestHCP65KernalBoot(void)
 	AssertTrue(cHCP65.LoadROM(puiROM, HCP65_ROM_SIZE));
 	cHCP65.Reset();
 
+	//The sound board's frames are taken as they are played: it keeps no more than 64K of them.
+	acPlayed.Init();
 	puiRAM = cHCP65.GetMPURAM();
-	for (i = 0; i < 20; i++)
+	for (i = 0; i < (int)(TEST_HCP65_MAX_RUNS * (TEST_HCP65_RUN_CYCLES / uiRunCycles)); i++)
 	{
-		cHCP65.Run(5000000);
+		cHCP65.Run(uiRunCycles);
+		do
+		{
+			uiFrames = cAudio.ReadFrames(auiFrames, 0x1000);
+			TestKernalAppend(&acPlayed, auiFrames, uiFrames * 2);
+		}
+		while (uiFrames > 0);
 		TestKernalReadStatus(puiRAM, uiStatus, &sStatus);
+		if (getenv("TEST_HCP65_VERBOSE"))
+		{
+			printf("run %d: state %d (boot %d, exit %d, argument %d), process $%02X, depth %d, kernel %d, PC $%06X, sound %s, counter $%04X, frames %d\n", i, sStatus.uiState, sStatus.uiBootResult, sStatus.uiExitCode, sStatus.uiBootArgument, cHCP65.GetProcessID(), cHCP65.GetInterruptDepth(), cHCP65.IsKernelMode(), cHCP65.GetMPU()->GetProgramAddress(), cAudio.IsEnabled() ? "on" : "off", cAudio.GetCounter(), (int)(acPlayed.NumElements() / 2));
+			fflush(stdout);
+		}
 		if ((sStatus.uiState >= TEST_KERNAL_STATE_BOOT_FAILED) || ((sStatus.uiState > TEST_KERNAL_STATE_DEVICES_SCANNED) && (sStatus.uiState < TEST_KERNAL_STATE_MOUNTED)) || cHCP65.IsStopped())
 		{
 			break;
@@ -169,20 +336,22 @@ void TestHCP65KernalBoot(void)
 	AssertTrue(sStatus.uiFreeClusters <= sStatus.uiNumClusters);
 	AssertTrue(cSDCard.NumSectorsRead() > 0);
 	AssertInt(0, cSDCard.NumSectorsWritten());
+	AssertInt(uiSeconds, (uint32)sStatus.uiBootArgument);
 
 	//boot.exe ran in user mode (process $FF), multiplied and divided with the tables, gave the kernal 300 * 200 / 3
-	//and exited with 42; the kernal is back in kernel mode.
+	//and ran modplay.exe (process $FE), whose exit code it exited with; the kernal is back in kernel mode.
 	AssertInt(TEST_KERNAL_PROCESS_EXITED, sStatus.uiBootResult);
-	AssertInt(42, sStatus.uiExitCode);
+	AssertInt(MODPLAY_EXIT_SUCCESS, sStatus.uiExitCode);
 	AssertInt(20000, sStatus.uiUserValue);
 	AssertInt(0xFF, cHCP65.GetProcessID());
 	AssertInt(1, cHCP65.GetInterruptDepth());
 
-	//The SD Card Board was enabled and the sound board left in reset.
-	AssertInt(1 << TEST_HCP65_SD_SOCKET, cHCP65.GetDeviceEnables());
+	//The SD Card Board was enabled at boot, the sound board by modplay.exe, which left it disabled.
+	AssertInt((1 << TEST_HCP65_SD_SOCKET) | (1 << TEST_HCP65_AUDIO_SOCKET), cHCP65.GetDeviceEnables());
+	AssertFalse(cAudio.IsEnabled());
 
 	//The math tables were copied from ROM banks 4-7 to main memory at $400000, and the kernal from ROM banks 0-3 to
-	//MPU RAM; the remap table is clear.
+	//MPU RAM.  The processes' pages of the remap table were cleared when they exited.
 	puiMain = cHCP65.GetMainMemory();
 	AssertTrue(memcmp(&puiROM[HCP65_ROM_CODE_END], &puiMain[HCP65_TABLES_START], HCP65_TABLES_END - HCP65_TABLES_START) == 0);
 	AssertInt(15, puiMain[HCP65_TABLES_START + ((3 << 8) | 5) * 2]);
@@ -195,6 +364,35 @@ void TestHCP65KernalBoot(void)
 		}
 	}
 	AssertInt(0x400, i);
+
+	//What the sound board played: the song's first seconds as the host plays them, then silence until it was stopped.
+	uiExpectedFrames = uiSeconds * MODPLAY_SAMPLE_RATE;
+	acExpected.Init();
+	TestKernalRenderSong(uiExpectedFrames, &acExpected);
+	AssertInt(uiExpectedFrames * 2, (uint32)acExpected.NumElements());
+	AssertTrue(acPlayed.NumElements() / 2 >= uiExpectedFrames);
+	AssertTrue(acPlayed.NumElements() / 2 <= uiExpectedFrames + MODPLAY_BLOCK_FRAMES);
+	if (acPlayed.NumElements() >= acExpected.NumElements())
+	{
+		puiPlayed = acPlayed.GetData();
+		for (uiFirstDifference = 0; uiFirstDifference < acExpected.NumElements(); uiFirstDifference++)
+		{
+			if (puiPlayed[uiFirstDifference] != acExpected.GetData()[uiFirstDifference])
+			{
+				break;
+			}
+		}
+		AssertInt((uint32)acExpected.NumElements(), uiFirstDifference);
+		bSilence = true;
+		for (i = (int)acExpected.NumElements(); i < (int)acPlayed.NumElements(); i++)
+		{
+			bSilence &= puiPlayed[i] == 0x80;
+		}
+		AssertTrue(bSilence);
+	}
+	AssertTrue(cAudio.NumDroppedFrames() == 0);
+	acExpected.Kill();
+	acPlayed.Kill();
 
 	cHCP65.Kill();
 	cSDCard.Kill();

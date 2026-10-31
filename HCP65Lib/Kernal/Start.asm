@@ -19,9 +19,6 @@
 
 
 KERNAL_STACK_TOP	= 0xBFFF		; The kernal's stack.
-KERNAL_COP_STACK_TOP	= 0xCFFF		; The stack kernal calls run on.  $D000-$EFFF is left free: a process's
-							; S is there, and an interrupt taken in kernel mode while S still holds it
-							; (before the kernal switches stacks) pushes there.
 KERNAL_ROM_OFFSET	= 0x80000		; Where an address's ROM byte is once ROM and RAM have swapped.
 KERNAL_REMAP_TABLE	= 0x07FC00		; Process $FC's page of the remap table.
 
@@ -230,9 +227,10 @@ KernalIrq:
 
 
 		; A kernal call: COP n from a process.  Its frame is on the process's stack and S still points there (in MPU
-		; RAM now), so the registers are saved without the stack, then the call runs on the kernal call stack.
-		; KernalCopCall (C++) reads the signature byte through the remap table.  The exit call goes back to whoever
-		; ran the process (KernalEnterUser's caller); every other call returns to the process.
+		; RAM now), so the registers are saved without the stack, then the call runs on the kernal's stack below where
+		; KernalEnterUser left it for this process (so a process run during another's execute call has its calls below
+		; the other's).  KernalCopCall (C++) reads the signature byte through the remap table.  The exit call goes back
+		; to whoever ran the process (KernalEnterUser's caller); every other call returns to the process.
 KernalCop:
 		rep (m, x)
 		sta [_gsKernalCall + 0]:24
@@ -244,7 +242,7 @@ KernalCop:
 		sta [_gsKernalCall + 6]:24
 		tdc
 		sta [_gsKernalCall + 8]:24
-		lda KERNAL_COP_STACK_TOP
+		lda [_gsKernalCall + 12]:24
 		tcs
 		lda 0
 		sep m

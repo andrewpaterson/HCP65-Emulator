@@ -1,4 +1,4 @@
-# Linux build of TestHCP65Lib (BaseLib + TestLib + StandardLib + MicroprocessorLib +
+# Linux build of TestHCP65Lib (BaseLib + TestLib + StandardLib + SupportLib + MicroprocessorLib +
 # Assembler65Lib + CppParserLib + HCP65Lib + TestHCP65Lib).  The tests run the HCP65
 # emulator and build and boot the kernal ROM (compiled for the W65C816).
 #
@@ -36,6 +36,7 @@ set(COMMON_DIR "${CODAPHELA_ROOT}/commonlibraries")
 set(BASELIB_DIR "${COMMON_DIR}/BaseLib")
 set(TESTLIB_DIR "${COMMON_DIR}/TestLib")
 set(STANDARDLIB_DIR "${COMMON_DIR}/StandardLib")
+set(SUPPORTLIB_DIR "${COMMON_DIR}/SupportLib")
 set(CPPPARSERLIB_DIR "${COMMON_DIR}/CppParserLib")
 set(MICROPROCESSORLIB_DIR "${COMMON_DIR}/MicroprocessorLib")
 set(ASSEMBLER65LIB_DIR "${COMMON_DIR}/Assembler65Lib")
@@ -90,6 +91,8 @@ vcxproj_sources(BASELIB_SOURCES "${BASELIB_DIR}/BaseLib.vcxproj")
 vcxproj_sources(TESTLIB_SOURCES "${TESTLIB_DIR}/TestLib.vcxproj")
 
 vcxproj_sources(STANDARDLIB_SOURCES "${STANDARDLIB_DIR}/StandardLib.vcxproj")
+
+vcxproj_sources(SUPPORTLIB_SOURCES "${SUPPORTLIB_DIR}/SupportLib.vcxproj")
 
 vcxproj_sources(CPPPARSERLIB_SOURCES "${CPPPARSERLIB_DIR}/CppParserLib.vcxproj")
 
@@ -184,6 +187,9 @@ target_link_libraries(StandardLib PUBLIC BaseLib)
 # The Debug configurations of StandardLib (only) define DEBUG_POINTER.
 target_compile_definitions(StandardLib PRIVATE $<$<CONFIG:Debug>:DEBUG_POINTER>)
 
+add_library(SupportLib STATIC ${SUPPORTLIB_SOURCES})
+target_link_libraries(SupportLib PUBLIC StandardLib BaseLib)
+
 add_library(CppParserLib STATIC ${CPPPARSERLIB_SOURCES})
 target_link_libraries(CppParserLib PUBLIC Assembler65Lib MicroprocessorLib StandardLib BaseLib)
 
@@ -198,7 +204,7 @@ target_link_libraries(HCP65Lib PUBLIC MicroprocessorLib StandardLib BaseLib)
 
 add_executable(TestHCP65Lib ${TESTHCP65LIB_SOURCES})
 target_include_directories(TestHCP65Lib PRIVATE "${CODAPHELA_ROOT}/HCP65-Emulator")
-target_link_libraries(TestHCP65Lib PRIVATE TestLib HCP65Lib CppParserLib Assembler65Lib MicroprocessorLib StandardLib BaseLib)
+target_link_libraries(TestHCP65Lib PRIVATE TestLib HCP65Lib CppParserLib Assembler65Lib MicroprocessorLib SupportLib StandardLib BaseLib)
 
 # The tests read their input (../../HCP65Emulator/Input ...) relative to the project directory,
 # as Visual Studio does.

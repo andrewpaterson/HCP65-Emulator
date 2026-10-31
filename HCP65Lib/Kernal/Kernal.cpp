@@ -7,8 +7,9 @@
 #include "Kernal.h"
 
 
-SKernalStatus	gsKernalStatus = { KERNAL_STATE_STARTING, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+SKernalStatus	gsKernalStatus = { KERNAL_STATE_STARTING, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 CKernalSDCard	gcKernalSDCard;
+uint16			guiKernalBootArgument = KERNAL_NO_BOOT_ARGUMENT;	//Not 0: zero initialised globals are bss, not in the ROM.
 CFatVolume		gcKernalVolume;
 
 
@@ -33,31 +34,6 @@ extern "C" void KernalInitHeap(void)
 
 //////////////////////////////////////////////////////////////////////////
 //
-// Lets the device in uiSlot run (the processor board holds every device in
-// reset until it is enabled).
-//
-//////////////////////////////////////////////////////////////////////////
-static void KernalEnableDevice(uint16 uiSlot)
-{
-	uint8	uiRegister;
-	uint8	uiBit;
-
-	if (uiSlot >= 16)
-	{
-		uiRegister = 5;
-		uiBit = (uint8)(1 << (uiSlot - 16));
-	}
-	else
-	{
-		uiRegister = 3;
-		uiBit = (uint8)(1 << uiSlot);
-	}
-	KernalWriteRegister(uiRegister, (uint8)(KernalReadRegister(uiRegister) | uiBit));
-}
-
-
-//////////////////////////////////////////////////////////////////////////
-//
 // Called by the start up once MPU RAM holds the kernal and its globals are
 // initialised.  Running in kernel mode, native, with interrupts disabled.
 // Finds the devices, brings up the SD card, mounts its FAT32 volume and
@@ -70,8 +46,10 @@ int main(void)
 	EFatCode		eResult;
 	uint16			uiSlot;
 
-	//BaseLib's memory: the allocators a chunk file (an executable) names are looked up there.
-	MemoryInit();
+	//The allocators a chunk file (an executable) names are looked up here.  Only the system allocator (malloc): BaseLib's
+	//global memory would be too big for the ROM.
+	gcMallocators.InitSystem();
+	gcConstructors.Init();
 
 	KernalScanDevices();
 	gsKernalStatus.uiState = KERNAL_STATE_DEVICES_SCANNED;
@@ -106,7 +84,8 @@ int main(void)
 	gsKernalStatus.uiFreeClusters = gcKernalVolume.GetTotalFreeClusters();
 	gsKernalStatus.uiState = KERNAL_STATE_MOUNTED;
 
-	gsKernalStatus.uiBootResult = KernalRunExecutable(KERNAL_BOOT_FILE, &gsKernalStatus.uiExitCode);
+	gsKernalStatus.uiBootArgument = (guiKernalBootArgument == KERNAL_NO_BOOT_ARGUMENT) ? 0 : guiKernalBootArgument;
+	gsKernalStatus.uiBootResult = KernalRunExecutable(KERNAL_BOOT_FILE, gsKernalStatus.uiBootArgument, &gsKernalStatus.uiExitCode);
 	gsKernalStatus.uiState = (gsKernalStatus.uiBootResult == KERNAL_PROCESS_EXITED) ? KERNAL_STATE_BOOT_EXITED : KERNAL_STATE_BOOT_FAILED;
 	return 0;
 }

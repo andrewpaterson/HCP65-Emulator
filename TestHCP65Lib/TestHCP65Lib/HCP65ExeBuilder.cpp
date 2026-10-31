@@ -24,6 +24,18 @@ void CHCP65ExeBuilder::Init(void)
 	mcBuilder.Init();
 	macExecutable.Init();
 	mszErrors.Init();
+	muiHeapSize = HCP65_EXE_DEFAULT_HEAP;
+}
+
+
+//////////////////////////////////////////////////////////////////////////
+//
+// The size of the process's heap (from $200000), a multiple of 64KB.
+//
+//////////////////////////////////////////////////////////////////////////
+void CHCP65ExeBuilder::SetHeapSize(uint32 uiHeapSize)
+{
+	muiHeapSize = (uiHeapSize + 0xFFFF) & ~(uint32)0xFFFF;
 }
 
 
@@ -42,10 +54,12 @@ void CHCP65ExeBuilder::Kill(void)
 //////////////////////////////////////////////////////////////////////////
 //
 // aszUnits (NULL terminated) are the program's files in
-// szProgramDirectory; one of them has main.
+// szProgramDirectory; one of them has main.  aszLibraries (NULL terminated,
+// or NULL) are more of the common libraries (StandardLib, SupportLib) to
+// link from: their Visual Studio projects.
 //
 //////////////////////////////////////////////////////////////////////////
-bool CHCP65ExeBuilder::Build(const char* szCommonLibraries, const char* szUser, const char* szProgramDirectory, const char** aszUnits)
+bool CHCP65ExeBuilder::Build(const char* szCommonLibraries, const char* szUser, const char* szProgramDirectory, const char** aszUnits, const char** aszLibraries)
 {
 	CFileUtil	cFileUtil;
 	CChars		szCommon;
@@ -85,6 +99,15 @@ bool CHCP65ExeBuilder::Build(const char* szCommonLibraries, const char* szUser, 
 	cFileUtil.AppendToPath(&szPath, "BaseLib.vcxproj");
 	bResult = mcBuilder.AddVisualStudioProject("BaseLib", szPath.Text(), true);
 	szPath.Kill();
+	for (i = 0; aszLibraries && aszLibraries[i]; i++)
+	{
+		szPath.Init(szCommon);
+		cFileUtil.AppendToPath(&szPath, aszLibraries[i]);
+		cFileUtil.AppendToPath(&szPath, aszLibraries[i]);
+		szPath.Append(".vcxproj");
+		bResult &= mcBuilder.AddVisualStudioProject(aszLibraries[i], szPath.Text(), true);
+		szPath.Kill();
+	}
 
 	szPath.Init(szCommon);
 	cFileUtil.AppendToPath(&szPath, "Libc65");
@@ -168,6 +191,12 @@ bool CHCP65ExeBuilder::MakeExecutable(void)
 	psSymbol = cObject.GetSymbol(uiSymbol);
 	psSymbol->iSection = -1;
 	psSymbol->iValue = lliEntry;
+	psSymbol->eBinding = AB65_Global;
+
+	uiSymbol = cObject.PutSymbol(HCP65_EXE_MEMORY_SIZE_SYMBOL);
+	psSymbol = cObject.GetSymbol(uiSymbol);
+	psSymbol->iSection = -1;
+	psSymbol->iValue = HCP65_EXE_HIGH_MEMORY + muiHeapSize;
 	psSymbol->eBinding = AB65_Global;
 
 	pcMemoryFile = MemoryFile();

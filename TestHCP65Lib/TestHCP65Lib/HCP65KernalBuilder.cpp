@@ -10,7 +10,7 @@
 static const char* gaszHCP65Libc65[] = { "string.cpp", "stdlib.cpp", "ctype.cpp", "time.cpp", "math.cpp", "softfloat.cpp", "new.cpp", "signal.cpp", "stdio.cpp", "host.cpp", "string816.asm", "string816_16.asm", "softfloat816.asm", NULL };
 
 //The kernal's units, linked only when used.  Start.asm and Kernal.cpp (main) are always linked.
-static const char* gaszHCP65KernalUnits[] = { "KernalDevices.cpp", "KernalSDCard.cpp", "KernalProcess.cpp", NULL };
+static const char* gaszHCP65KernalUnits[] = { "KernalDevices.cpp", "KernalSDCard.cpp", "KernalProcess.cpp", "KernalAudio.asm", NULL };
 
 
 //////////////////////////////////////////////////////////////////////////

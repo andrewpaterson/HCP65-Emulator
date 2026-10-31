@@ -260,6 +260,10 @@
       <Project>{2cfa23fa-6565-4744-8b75-9790b21cc0e5}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\CommonLibraries\SupportLib\SupportLib.vcxproj">
+      <Project>{221022f1-b103-456a-8f55-721f33f2e26d}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\CommonLibraries\TestLib\TestLib.vcxproj">
       <Project>{d06d265e-a503-42f8-a93a-a0a1c0b058ff}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
