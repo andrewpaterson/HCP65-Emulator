@@ -13,3 +13,8 @@
 /HCP65Lib/Release/*
 /HCP65Lib/x64/Debug/*
 /HCP65Lib/x64/Release/*
+/TestHCP65Lib/TestHCP65Lib/Debug/*
+/TestHCP65Lib/TestHCP65Lib/Release/*
+/TestHCP65Lib/TestHCP65Lib/x64/*
+/TestHCP65Lib/TestHCP65Lib/Output/*
+/TestHCP65Lib/TestHCP65Lib/Log.txt

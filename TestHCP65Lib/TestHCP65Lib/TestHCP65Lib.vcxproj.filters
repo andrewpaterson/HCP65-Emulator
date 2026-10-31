@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="TestHCP65Lib.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="TestHCP65Machine.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="TestHCP65Kernal.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="HCP65KernalBuilder.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="HCP65KernalBuilder.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source">
+      <UniqueIdentifier>{4E2B9C71-8D3A-4F56-A1B0-6C9D2E7F8A41}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

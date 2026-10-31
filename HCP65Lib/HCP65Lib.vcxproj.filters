@@ -13,6 +13,9 @@
     <ClCompile Include="HCP65Audio.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="HCP65SDCard.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HCP65.h">
@@ -25,6 +28,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="HCP65Audio.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="HCP65SDCard.h">
       <Filter>Source</Filter>
     </ClInclude>
   </ItemGroup>
