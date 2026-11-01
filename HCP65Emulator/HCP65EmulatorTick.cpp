@@ -111,8 +111,9 @@ void CHCP65EmulatorTick::Run(int64 iTotalTimeInMillieconds)
 	uiMaxCycles = (uiClockRate * HCP65_EMULATOR_MAX_TICK_MS) / 1000;
 	if (uiCycles > uiMaxCycles)
 	{
-		//The host can't keep up: the HCP65's time falls behind the window's.
-		muiStartCycles += uiCycles - uiMaxCycles;
+		//The host can't keep up: the HCP65's time falls behind the window's (the start goes back by the cycles not run,
+		//so the next target is from where it got to; it may wrap, but the targets made from it don't).
+		muiStartCycles -= uiCycles - uiMaxCycles;
 		uiCycles = uiMaxCycles;
 	}
 	mpcHCP65->Run(uiCycles);

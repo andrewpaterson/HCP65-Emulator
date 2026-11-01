@@ -24,7 +24,7 @@ protected:
 	CHCP65Audio*	mpcAudio;
 	CHostAudio*		mpcHostAudio;
 	int64			miStartTime;			//The window's time when the HCP65 started, -1 before the first tick.
-	uint64			muiStartCycles;			//The HCP65's cycles then (they move on when the host falls behind).
+	uint64			muiStartCycles;			//The HCP65's cycles then, less those it didn't run when the host fell behind.
 	int64			miStopTime;				//HCP65_EMULATOR_SECONDS (environment): the window stops after it, or -1.
 	int64			miReportTime;			//HCP65_EMULATOR_TRACE (environment): when the next report is printed, or -1.
 	uint64			muiFramesPlayed;
